@@ -29,19 +29,21 @@ fn main() {
                 .help("Build a CMake project"),
         )
         .get_matches();
-    if matches.value_of("name") != None {
-        let name = matches.value_of("name").unwrap_or("Default");
-        let root_path = create_by_name(name).unwrap();
-    } else if matches.value_of("clear") != None {
-        let path = matches.value_of("clear").unwrap_or("./");
-        if path.starts_with("./")
-        //当前目录下面
-        {
-            clear_by_path(path);
-        } else {
-            let local_path =format!("./{}",path);
-            clear_by_path(&local_path);
+    if let Some(name) = matches.value_of("name") {
+        match create_by_name(name) {
+            Ok(path) => {
+                println!("Create project success! Path:{}", path);
+            }
+            Err(e) => {
+                println!("Create project failed! Error:{}", e);
+            }
         }
+    }
+    if let Some(path) = matches.value_of("clear") {
+        clear_by_path(path);
+    }
+    if let Some(path) = matches.value_of("build") {
+        build_project(path);
     }
 }
 
@@ -63,10 +65,60 @@ fn create_by_name(name: &str) -> Result<String, String> {
     let buf = format!("project({})\n", name)
         + "include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)\n"
         + "set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build)\n"
-        + "files(GLOB SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)\n"
+        + "file(GLOB SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)\n"
         +"set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n"
         + "add_executable(${PROJECT_NAME} ${SRC_FILES})\n";
     CMakeFile.write_all(buf.as_bytes());
     Ok(current_dir)
 }
-fn clear_by_path(pth:&str){}
+//recursively clear "Makefile" "CMakeCache.txt" "CMakeFiles" "cmake_install.cmake" "CMakeLists.txt" "build" files
+fn clear_by_path(pth:&str)
+{
+   if pth.ends_with("/")// is a dir
+    {
+         let mut dir=std::fs::read_dir(pth).unwrap();
+         for entry in dir
+         {
+              let entry=entry.unwrap();
+              let path=entry.path();
+              let path_str=path.display().to_string();
+              if path_str.ends_with("Makefile")||path_str.ends_with("CMakeCache.txt")||path_str.ends_with("CMakeFiles")||path_str.ends_with("cmake_install.cmake")||path_str.ends_with("CMakeLists.txt")||path_str.ends_with("build")
+              {
+                std::fs::remove_dir_all(path.clone());
+                println!("remove {}",path_str.clone());
+              }
+              else
+              {
+                clear_by_path(&path_str);
+              }
+         }
+    }
+    else
+    {
+        let path=pth.to_string();
+        if path.ends_with("Makefile")||path.ends_with("CMakeCache.txt")||path.ends_with("CMakeFiles")||path.ends_with("cmake_install.cmake")||path.ends_with("CMakeLists.txt")||path.ends_with("build")
+        {
+            println!("remove {}",path);
+            std::fs::remove_dir_all(path);
+        }
+    }   
+}
+//build project
+fn build_project(path: &str) {
+    let mut build_path = path.to_string();
+    build_path.push_str("/build");
+    let mut build = std::process::Command::new("cmake")
+        .arg("-S")
+        .arg(path)
+        .arg("-B")
+        .arg(build_path.clone())
+        .output()
+        .expect("cmake build error");
+    println!("{}", string::String::from_utf8_lossy(&build.stdout));
+    let mut make = std::process::Command::new("make")
+        .arg("-C")
+        .arg(build_path.clone())
+        .output()
+        .expect("make error");
+    println!("{}", string::String::from_utf8_lossy(&make.stdout));
+}
